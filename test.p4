@@ -33,10 +33,10 @@ const node_t n2 = {true, 4, false, 0, true, 0};
 const node_t n3 = {false, 99, false, 0, true, 0};
 const node_t n4 = {true, 2, false, 0, false, 0};
 
-const tuple<node_t> layer0 = {root};
-const tuple<node_t, node_t> layer1 = {n1, n2};
-const tuple<node_t> layer2 = {n3};
-const tuple<node_t> layer3 = {n4};
+// const tuple<node_t> layer0 = {root};
+// const tuple<node_t, node_t> layer1 = {n1, n2};
+// const tuple<node_t> layer2 = {n3};
+// const tuple<node_t> layer3 = {n4};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -155,19 +155,84 @@ control prefixMatch4(inout bit<8> ipAddr, inout bit<8> outputFace, out bool hasL
     apply { matcher.apply(); }
 }
 
+control layer0Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){
+    action match0(){
+        outputFace = root.outputFace;
+        if(root.hasLeft && (ipAddr & 0x80) >> 7 == 0){
+            idx = root.lIdx;
+        } else if(root.hasRight && (ipAddr & 0x80) >> 7 == 1){
+            idx = root.rIdx;
+        } else {
+            done = true;
+        }
+    }
+
+    table matcher {
+        key = { idx: exact; }
+        actions = {
+            match0;
+        }
+
+        const entries = {
+            0: match0();
+        }
+    }
+
+    apply {
+        matcher.apply();
+    }
+}
+
+
+control layer1Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){
+    action match0(){
+        outputFace = n1.outputFace;
+        if(n1.hasLeft && (ipAddr & 0x40) >> 6 == 0){
+            idx = n1.lIdx;
+        } else if(n1.hasRight && (ipAddr & 0x40) >> 6 == 0){
+            idx = n1.rIdx;
+        } else {
+            done = true;
+        }
+    }
+
+    action match1(){
+        outputFace = n2.outputFace;
+        if(n2.hasLeft && (ipAddr & 0x40) >> 6 == 0){
+            idx = n2.lIdx;
+        } else if(n2.hasRight && (ipAddr & 0x40) >> 6 == 0){
+            idx = n2.rIdx;
+        } else {
+            done = true;
+        }
+    }
+
+    table matcher {
+        key = { idx: exact; }
+        actions = {
+            match0;
+            match1;
+        }
+
+        const entries = {
+            0: match0();
+            1: match1();
+        }
+    }
+
+    apply {
+        matcher.apply();
+    }
+}
+
 control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {
-    prefixMatch0() prefixMatch0_inst1;
-    prefixMatch1() prefixMatch1_inst1;
-    prefixMatch2() prefixMatch2_inst1;
-    prefixMatch3() prefixMatch3_inst1;
-    prefixMatch4() prefixMatch4_inst1;
+    layer0Match() layer0Match_inst;
+    layer1Match() layer1Match_inst;
     bit<8> ipAddr;
     bit<8> outputFace;
     bool hasLeft;
     bool hasRight;
     node_t curr_node;
-    tuple<bit<2>, bit<2>> test = {1, 2};
-    bit<2> test2 = test[0];
 
     apply {
         ipAddr = hdr.standard.src;
@@ -175,91 +240,16 @@ control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_m
         outputFace = 99;
         hasLeft = false;
         hasRight = false;
+        bit<8> idx = 0;
+        bool done = false;
 
-        // layer 0
-        if(curr_node.hasPrefix){
-            outputFace = curr_node.outputFace;
-        }
-        if(curr_node.lIdx != -1 && (ipAddr & 0x80) >> 7 == 0){
-            curr_node = layer1[curr_node.lIdx];
-        } else if(curr_node.rIdx != -1 && (ipAddr & 0x80) >> 7 == 1) {
-            curr_node = layer1[curr_node.rIdx];
-        } else {
-            return; // reached a leaf node
-        }
+        layer0Match_inst.apply(hdr.standard.src, idx, outputFace, done);
+        hdr.standard.outputFace = outputFace;
+        if(done){ return; }
 
-        // layer 1
-        if(curr_node.hasPrefix){
-            outputFace = curr_node.outputFace;
-        }
-        if(curr_node.lIdx != -1 && (ipAddr & 0x40) >> 6 == 0){
-            curr_node = layer2[curr_node.lIdx];
-        } else if(curr_node.rIdx != -1 && (ipAddr & 0x40) >> 6 == 1) {
-            curr_node = layer2[curr_node.rIdx];
-        } else {
-            return; // reached a leaf node
-        }
-
-        // layer 2
-        if(curr_node.hasPrefix){
-            outputFace = curr_node.outputFace;
-        }
-        if(curr_node.lIdx != -1 && (ipAddr & 0x20) >> 5 == 0){
-            curr_node = layer3[curr_node.lIdx];
-        } else if(curr_node.rIdx != -1 && (ipAddr & 0x20) >> 5 == 1) {
-            curr_node = layer3[curr_node.rIdx];
-        } else {
-            return; // reached a leaf node
-        }
-
-        // layer 3
-        if(curr_node.hasPrefix){
-            outputFace = curr_node.outputFace;
-        }
-        // last layer so don't try to advance farther
-        // if(curr_node.lIdx != -1 && (ipAddr & 0x20) >> 5 == 0){
-        //     curr_node = layer3[curr_node.lIdx];
-        // } else if(curr_node.rIdx != -1 && (ipAddr & 0x20) >> 5 == 1) {
-        //     curr_node = layer3[curr_node.rIdx];
-        // } else {
-        //     return; // reached a leaf node
-        // }
-
-
-
-        
-        // // Layer 1: root
-        // prefixMatch0_inst1.apply(hdr.standard.src, outputFace, hasLeft, hasRight);
-        
-        // // Layer 2: first bit
-        // if(hasLeft && (ipAddr & 0x80) >> 7 == 0){
-        //     prefixMatch1_inst1.apply(hdr.standard.src, outputFace, hasLeft, hasRight);
-        //     curr_node = n1;
-        //     hdr.standard.outputFace = outputFace;
-        //     // return;
-        // } else if(hasRight && (ipAddr & 0x80) >> 7 == 1){
-        //     prefixMatch2_inst1.apply(hdr.standard.src, outputFace, hasLeft, hasRight);
-        //     curr_node = n2;
-        //     hdr.standard.outputFace = outputFace;
-        //     // return;
-        // }
-
-        // // Layer 2: second bit
-        // // n2 has no left node so we don't need to check it
-        // if(curr_node == n2 && hasRight && (ipAddr & 0x40) >> 6 == 1){
-        //     prefixMatch3_inst1.apply(hdr.standard.src, outputFace, hasLeft, hasRight);
-        //     curr_node = n3;
-        //     hdr.standard.outputFace = outputFace;
-        //     // return;
-        // }
-
-        // // Layer 3: third bit
-        // if(curr_node == n3 && hasRight && (ipAddr & 0x20) >> 5 == 1){
-        //     prefixMatch4_inst1.apply(hdr.standard.src, outputFace, hasLeft, hasRight);
-        //     curr_node = n4;
-        //     hdr.standard.outputFace = outputFace;
-        //     // return;
-        // }
+        layer1Match_inst.apply(hdr.standard.src, idx, outputFace, done);
+        hdr.standard.outputFace = outputFace;
+        if(done){ return; }
     }
 }
 
