@@ -10,6 +10,7 @@ class Node:
     left = None
     right = None
     outFace = None
+    uniq_id = None
 
     def __init__(self, val):
         self.val = val
@@ -17,33 +18,25 @@ class Node:
     
     def __str__(self):
         if self.left is not None and self.right is not None:
-
             return f"{self.val=} {self.outFace=} {self.left.val=} {self.right.val=}"
         elif self.left is not None:
             return f"{self.val=} {self.outFace=} {self.left.val=} None"
         elif self.right is not None:
             return f"{self.val=} {self.outFace=} None {self.right.val=}"
-        
         else:
             return f"{self.val=} {self.outFace=} None None"
-    
-    def p4_repr(self, num):
-        outFace = self.outFace
-        if self.outFace is None:
-            outFace = 99
-        
-        return f"const node_t n{num} = {{{isNotNone_to_str(self.outFace)}, {outFace}, {isNotNone_to_str(self.left)}, {isNotNone_to_str(self.right)}}};"
 
 prefixes = {
-    # "101": 1,
+    "101": 1,
     "111": 2,
-    # "11001": 3,
+    "11001": 3,
     "1": 4,
     "0": 5,
-    # "1000": 6,
-    # "100000": 7,
-    # "100": 8,
-    # "110": 9
+    "1000": 6,
+    "100000": 7,
+    "100": 8,
+    "110": 9,
+    "11110000": 10
 }
 
 root = Node("root")
@@ -74,15 +67,19 @@ for k, v in prefixes.items():
 #     print("\t" + n.p4_repr(i))
 
 queue = deque([root])
-bfs = []
+bfs = [] # array of arrays, one array for each level
+bfs_flat = []  # flattened version of `bfs`
 # bfs = [(root, 0)]
 depth = 0
 
 while len(queue) > 0:
     length = len(queue)
+    bfs.append([])
     for i in range(length):
         node = queue.popleft()
-        bfs.append((node, depth))
+        node.uniq_id = i
+        bfs[-1].append((node, depth))
+        bfs_flat.append((node, depth))
         if node.left is not None:
             queue.append(node.left)
         if node.right is not None:
@@ -90,59 +87,37 @@ while len(queue) > 0:
         
     depth += 1
 
-with open("var_decls.p4", "w") as f:
-    for i, node_depth in enumerate(bfs):
-        n, depth = node_depth
-        print(n, depth)
-        f.write(n.p4_repr(i) + "\n")
-        print("\t" + n.p4_repr(i))
+with open("var_decls.p4gen", "w") as f:
+    for tree_depth, node_list in enumerate(bfs):
+        for i, node_depth in enumerate(node_list):
+            n, depth = node_depth
 
-with open("control_decls.p4", "w") as f:
-    for i, node_depth in enumerate(bfs):
-        n, depth = node_depth
-        control_decl = (
-            f"control prefixMatch{i}(inout bit<8> ipAddr, inout bit<8> outputFace, out bool hasLeft, out bool hasRight) {{"
-            f"\n\taction match{i}(){{"
-            f"\n\t\tif(n{i}.hasPrefix){{ outputFace = n{i}.outputFace; }}"
-            f"\n\t\thasLeft = n{i}.hasLeft;"
-            f"\n\t\thasRight = n{i}.hasRight;"
-            f"\n\t}}"
-            f"\n"
-            f"\n\ttable matcher {{"
-            f"\n\t\tkey = {{ ipAddr: exact; }}"
-            f"\n\t\tactions = {{ match{i}; }}"
-            f"\n\t\tconst default_action = match{i};"
-            f"\n\t}}"
-            f"\n"
-            f"\n\tapply {{ matcher.apply(); }}"
-            f"\n}}"
-            f"\n"
-        )
-        
-        f.write(control_decl + "\n")
+            print(n, "depth=" + str(depth))
+            hasPrefix = isNotNone_to_str(n.outFace)
 
-with open("ingress.p4", "w") as f:
-    for i, node_depth in enumerate(bfs):
-        control_inst = f"\tprefixMatch{i}() prefixMatch{i}_instance;"
-        f.write(control_inst + "\n")
-    
-    text = (
-        "\n\tbit<8> ipAddr;"
-        "\n\tbit<8> outputFace;"
-        "\n\tbool hasLeft;"
-        "\n\tbool hasRight;"
-        "\n\tnode_t curr_node;"
-        "\n\tapply {"
-        "\n\t\tipAddr = hdr.standard.src;"
-        "\n\t\tcurr_node = root;"
-        "\n\t\toutputFace = 99;"
-        "\n\t\thasLeft = false;"
-        "\n\t\thasRight = false;"
+            outFace = n.outFace
+            if n.outFace is None:
+                outFace = 99 # the "default" value
+            
+            hasLeft = isNotNone_to_str(n.left)
+            lIdx = 0
+            if n.left is not None:
+                lIdx = n.left.uniq_id
+            
+            hasRight = isNotNone_to_str(n.right)
+            rIdx = 0
+            if n.right is not None:
+                rIdx = n.right.uniq_id
+            
+            text = f"\nconst node_t n{tree_depth}_{i} = {{{hasPrefix}, {outFace}, {hasLeft}, {lIdx}, {hasRight}, {rIdx}}};"
+            f.write(text)
 
-        "\n\t}"
-    )
+            print("\t" + text[1:])
 
-    f.write(text + "\n")
+print("=========================================================")
+
+# For now, 8 bits
+IP_ADDR_WIDTH = 8
 
 masks = [
     # 8 bit masks for now, adjust later
@@ -150,31 +125,98 @@ masks = [
     0x08, 0x04, 0x02, 0x01
 ]
 
-with open("tree_traversal.p4", "w") as f:
-    for i, node_depth in enumerate(bfs):
-        if i == 0:
-            # root layer
-            text = (
-                f"\n\t\tprefixMatch{i}_instance.apply(hdr.standard.src, outputFace, hasLeft, hasRight)"
-            )
-            f.write(text + "\n")
-        else:
-            
-    
-    text = (
-        "\n\tbit<8> ipAddr;"
-        "\n\tbit<8> outputFace;"
-        "\n\tbool hasLeft;"
-        "\n\tbool hasRight;"
-        "\n\tnode_t curr_node;"
-        "\n\tapply {"
-        "\n\t\tipAddr = hdr.standard.src;"
-        "\n\t\tcurr_node = root;"
-        "\n\t\toutputFace = 99;"
-        "\n\t\thasLeft = false;"
-        "\n\t\thasRight = false;"
+with open("control_decls.p4gen", "w") as f:
+    for tree_depth, node_list in enumerate(bfs):
+        start = f"control layer{tree_depth}Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){{"
+        f.write(start)
 
-        "\n\t}"
+        for i, node_depth in enumerate(node_list):
+            n, depth = node_depth
+            node_var_name = f"n{tree_depth}_{i}"
+            print(f"{tree_depth=} {i=} {n.val=} {depth=}")
+            action_decl = (
+                f"\n    action match{i}(){{"
+                f"\n        if({node_var_name}.hasPrefix){{ outputFace = {node_var_name}.outputFace; }}"
+            )
+
+            if tree_depth < IP_ADDR_WIDTH:
+                action_decl += (
+                    f"\n        if({node_var_name}.hasLeft && (ipAddr & 0x{masks[tree_depth]:02x}) >> {IP_ADDR_WIDTH - 1 - tree_depth} == 0){{"
+                    f"\n            idx = {node_var_name}.lIdx;"
+                    f"\n        }} else if({node_var_name}.hasRight && (ipAddr & 0x{masks[tree_depth]:02x}) >> {IP_ADDR_WIDTH - 1 - tree_depth} == 1){{"
+                    f"\n            idx = {node_var_name}.rIdx;"
+                    f"\n        }} else {{"
+                    f"\n            done = true;"
+                    f"\n        }}"
+                    f"\n    }}" # close action block
+                )
+            else:
+                action_decl += (
+                    f"\n        done = true;"
+                    f"\n    }}" # close action block
+                )
+            
+            f.write(action_decl + "\n")
+        
+        match_list = ""
+        entry_list = ""
+        for i, node_depth in enumerate(node_list):
+            n, depth = node_depth
+            match_list += f"            match{i};\n"
+            entry_list += f"            {i}: match{i}();\n"
+        
+        match_list.rstrip('\n')
+        entry_list.rstrip('\n')
+
+        table_apply_decl = (
+            f"\n    table matcher {{"
+            f"\n        key = {{ idx: exact; }}"
+            f"\n        actions = {{"
+            f"\n{match_list}"
+            f"        }}" # close actions block
+            f"\n"
+            f"\n        const entries = {{"
+            f"\n{entry_list}"
+            f"        }}" # close entries block
+            f"\n    }}" # close table block
+            f"\n"
+            f"\n    apply {{ matcher.apply(); }}"
+        )
+        f.write(table_apply_decl + "\n")
+
+        f.write("}" + "\n\n")
+
+with open("ingress.p4gen", "w") as f:
+    control_decl = f"control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {{"
+    f.write(control_decl + "\n")
+
+    for tree_depth, node_list in enumerate(bfs):
+        control_inst = f"    layer{tree_depth}Match() layer{tree_depth}Match_inst;"
+        f.write(control_inst + "\n")
+
+        for i, node_depth in enumerate(node_list):
+            n, depth = node_depth
+
+    text = (
+        f"\n    bit<8> ipAddr = hdr.standard.src;"
+        f"\n    bit<8> outputFace = 99;"
+        f"\n    bit<8> idx = 0;"
+        f"\n    bool done = false;"
+        f"\n    apply {{"
     )
 
     f.write(text + "\n")
+
+    for tree_depth, node_list in enumerate(bfs):
+        control_inst = (
+            f"\n        layer{tree_depth}Match_inst.apply(hdr.standard.src, idx, outputFace, done);"
+            f"\n        hdr.standard.outputFace = outputFace;"
+            f"\n        if(done){{ return; }}"
+        )
+        f.write(control_inst + "\n")
+
+        for i, node_depth in enumerate(node_list):
+            n, depth = node_depth
+    
+    f.write("    }\n") # close the apply block
+    f.write("}\n") # close the control block

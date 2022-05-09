@@ -39,9 +39,6 @@ const node_t n4 = {true, 2, false, 0, false, 0};
 // const tuple<node_t> layer3 = {n4};
 
 ///////////////////////////////////////////////////////////////////////////////
-
-const bit<8> hello = 0x00;
-
 struct meta_t { }
 
 parser MyParser(packet_in pkt, out headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {
@@ -65,7 +62,10 @@ control MyComputeChecksum(inout headers_t hdr, inout meta_t meta) {
 
 control layer0Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){
     action match0(){
-        outputFace = root.outputFace;
+        if(root.hasPrefix){
+            outputFace = root.outputFace;
+        }
+        
         if(root.hasLeft && (ipAddr & 0x80) >> 7 == 0){
             idx = root.lIdx;
         } else if(root.hasRight && (ipAddr & 0x80) >> 7 == 1){
@@ -94,10 +94,12 @@ control layer0Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFa
 
 control layer1Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){
     action match0(){
-        outputFace = n1.outputFace;
+        if(n1.hasPrefix){
+            outputFace = n1.outputFace;
+        }
         if(n1.hasLeft && (ipAddr & 0x40) >> 6 == 0){
             idx = n1.lIdx;
-        } else if(n1.hasRight && (ipAddr & 0x40) >> 6 == 0){
+        } else if(n1.hasRight && (ipAddr & 0x40) >> 6 == 1){
             idx = n1.rIdx;
         } else {
             done = true;
@@ -105,10 +107,13 @@ control layer1Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFa
     }
 
     action match1(){
-        outputFace = n2.outputFace;
+        if(n2.hasPrefix){
+            outputFace = n2.outputFace;
+        }
+        
         if(n2.hasLeft && (ipAddr & 0x40) >> 6 == 0){
             idx = n2.lIdx;
-        } else if(n2.hasRight && (ipAddr & 0x40) >> 6 == 0){
+        } else if(n2.hasRight && (ipAddr & 0x40) >> 6 == 1){
             idx = n2.rIdx;
         } else {
             done = true;
@@ -133,15 +138,83 @@ control layer1Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFa
     }
 }
 
+control layer2Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){
+    action match0(){
+        if(n3.hasPrefix){
+            outputFace = n3.outputFace;
+        }
+        
+        if(n3.hasLeft && (ipAddr & 0x20) >> 5 == 0){
+            idx = n3.lIdx;
+        } else if(n3.hasRight && (ipAddr & 0x20) >> 5 == 1){
+            idx = n3.rIdx;
+        } else {
+            done = true;
+        }
+    }
+
+    table matcher {
+        key = { idx: exact; }
+        actions = {
+            match0;
+        }
+
+        const entries = {
+            0: match0();
+        }
+    }
+
+    apply {
+        matcher.apply();
+    }
+}
+
+control layer3Match(inout bit<8> ipAddr, inout bit<8> idx, inout bit<8> outputFace, inout bool done){
+    action match0(){
+        if(n4.hasPrefix){
+            outputFace = n4.outputFace;
+        }
+
+        // No need to look farther since we're at the bottom
+        done = true;
+        
+        // if(n4.hasLeft && (ipAddr & 0x20) >> 5 == 0){
+        //     idx = n4.lIdx;
+        // } else if(n4.hasRight && (ipAddr & 0x20) >> 5 == 1){
+        //     idx = n4.rIdx;
+        // } else {
+        //     done = true;
+        // }
+    }
+
+    table matcher {
+        key = { idx: exact; }
+        actions = {
+            match0;
+        }
+
+        const entries = {
+            0: match0();
+        }
+    }
+
+    apply {
+        matcher.apply();
+    }
+}
+
 control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {
     layer0Match() layer0Match_inst;
     layer1Match() layer1Match_inst;
-    bit<8> ipAddr;
+    layer2Match() layer2Match_inst;
+    layer3Match() layer3Match_inst;
+
+    bit<8> ipAddr = hdr.standard.src;
     bit<8> outputFace;
     node_t curr_node;
 
     apply {
-        ipAddr = hdr.standard.src;
+        // ipAddr ;
         outputFace = 99;
         bit<8> idx = 0;
         bool done = false;
@@ -151,6 +224,14 @@ control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_m
         if(done){ return; }
 
         layer1Match_inst.apply(hdr.standard.src, idx, outputFace, done);
+        hdr.standard.outputFace = outputFace;
+        if(done){ return; }
+
+        layer2Match_inst.apply(hdr.standard.src, idx, outputFace, done);
+        hdr.standard.outputFace = outputFace;
+        if(done){ return; }
+
+        layer3Match_inst.apply(hdr.standard.src, idx, outputFace, done);
         hdr.standard.outputFace = outputFace;
         if(done){ return; }
     }
