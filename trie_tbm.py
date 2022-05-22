@@ -18,8 +18,8 @@ class Node:
     def __str__(self):
         return f"{self.internalBitmap=} {self.externalBitmap=} {self.outFaceArray=}"
 
-# assume 32 bit IP addresses, so 8 possible layers for 4 bit strides
-# 255 possible nodes
+# assume 16 bit IP addresses, for 4 bit strides
+# 5 (4+1) possible layers, but each node has 16 children
 prefixes = {
     "101": 1,
     "111": 2,
@@ -34,7 +34,7 @@ prefixes = {
 }
 
 root = Node()
-nodes = [None] * 255 # "nodemap" in level order traversal for all nodes
+nodes = [None] * 1048575 # "nodemap" in level order traversal for all nodes
 nodes[0] = root
 
 # create nodes based on prefix inputs
@@ -51,12 +51,17 @@ for ip, next_hop in prefixes.items():
             # if so, create new node and set curr_index = 0
             # set external bitmap accordingly
             if curr_index >= 7:
+                # add 1 to externalBitmap to mark that we need to create a child
                 mask = 2**(14-2*(curr_index-7)+1)
                 curr_node.externalBitmap = curr_node.externalBitmap | mask
-                curr_node = Node()
+                # set curr_node to child or if no child, create one
+                curr_node_index = 16*curr_node_index+(2*(curr_index-7)+1) # node tree is a 16-ary tree
+                if nodes[curr_node_index] == None:
+                    curr_node = Node()
+                    nodes[curr_node_index] = curr_node
+                else:
+                    curr_node = nodes[curr_node_index]
                 curr_index = 0
-                curr_node_index = 2*curr_node_index+1
-                nodes[curr_node_index] = curr_node
             else:
                 curr_index = 2*curr_index+1
         else:
@@ -64,12 +69,17 @@ for ip, next_hop in prefixes.items():
             # if so, create new node and set curr_index = 0
             # set external bitmap accordingly
             if curr_index >= 7:
+                # add 1 to externalBitmap to mark that we need to create a child
                 mask = 2**(14-2*(curr_index-7))
                 curr_node.externalBitmap = curr_node.externalBitmap | mask
-                curr_node = Node()
+                # set curr_node to child or if no child, create one
+                curr_node_index = 16*curr_node_index+(2*(curr_index-7)+2)
+                if nodes[curr_node_index] == None:
+                    curr_node = Node()
+                    nodes[curr_node_index] = curr_node
+                else:
+                    curr_node = nodes[curr_node_index]
                 curr_index = 0
-                curr_node_index = 2*curr_node_index+2
-                nodes[curr_node_index] = curr_node
             else:
                 curr_index = 2*curr_index+2
     # end of prefix, must update internal bitmap and outface array
@@ -84,9 +94,13 @@ for ip, next_hop in prefixes.items():
 with open("var_decls.p4gen", "w") as f:
     for index, node in enumerate(nodes):
         if node != None:
-            tree_level = math.floor(math.log(index+1)/math.log(2)) # level in tree
-            level_index = index - (2**(tree_level) - 1) # index of node within level (0-indexed)
-            text = f"\nconst tbmnode_t nlevel_{tree_level}_{level_index} = {{{node.internalBitmap}, {node.externalBitmap}, {node.outFaceArray}}};"
+            tree_level = math.floor(math.log(15*index+1)/math.log(16)) # level in tree
+            level_index = index - math.floor((16**(tree_level) - 1)/15) # index of node within level (0-indexed)
+            outfaces = str(node.outFaceArray[0])
+            for i in range(1, 15):
+                outfaces += ", "
+                outfaces += str(node.outFaceArray[i])
+            text = f"\nconst tbmnode_t nlevel_{tree_level}_{level_index} = {{{node.internalBitmap}, {node.externalBitmap}, {outfaces}}};"
             f.write(text)
             # print(text)
 
