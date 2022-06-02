@@ -4,3 +4,8 @@ p4-guide/
 *.p4gen
 
 *.json
+*.pyc
+
+*/build/*
+*/logs/*
+*/pcaps/*
