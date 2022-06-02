@@ -3,7 +3,6 @@ p4-guide/
 *.p4i
 *.p4gen
 
-*.json
 *.pyc
 
 */build/*
