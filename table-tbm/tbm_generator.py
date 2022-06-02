@@ -1,4 +1,4 @@
-def generate(next_hop_map, stride_length=3, default_next_hop=0, output_file="tbm.p4gen"):
+def generate(next_hop_map, stride_length=3, default_next_hop=(0x0, 0), output_file="tbm.p4gen"):
     """
     Takes in params next_hop_map (maps 32-bit IP addresses to 32-bit next hops),
     as well as length of each stride. The default_next_hop param sets the default next
@@ -26,7 +26,8 @@ def validate_input(next_hop_map):
         for c in key:
             assert(c == "0" or c == "1")
         # next hops should fit in 32-bit unsigned integer
-        assert(0 <= next_hop_map[key] and next_hop_map[key] <= 2**32 - 1)
+        # changed to tuple of (output MAC, output router port)
+        # assert(0 <= next_hop_map[key] and next_hop_map[key] <= 2**32 - 1)
 
 def get_internal_level(prefix, stride_length):
     """
@@ -132,35 +133,7 @@ def write_levels_to_p4(levels, stride_length, output_file):
     Converted p4 code written to output_file.
     """
 
-    with open(output_file, "w") as f:
-        
-        # basic stuff (includes, structs, headers, parsing)
-        p4_header = ("#include <core.p4>"
-                     "\n#include <v1model.p4>"
-                     "\n\ntypedef standard_metadata_t std_meta_t;"
-                     "\n\nstruct meta_t { }"
-                     "\n\nheader standard_t {"
-                     "\n  bit<32> src;"
-                     "\n  bit<32> outputFace;"
-                     "\n}"
-                     "\nstruct headers_t {"
-                     "\n  standard_t standard;"
-                     "\n}"
-                     "\n\nparser MyParser(packet_in pkt, out headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {"
-                     "\n    state start {"
-                     "\n        pkt.extract(hdr.standard);"
-                     "\n        transition accept;"
-                     "\n    }"
-                     "\n}"
-                     "\n\ncontrol MyVerifyChecksum(inout headers_t hdr, inout meta_t meta) {"
-                     "\n    apply { }"
-                     "\n}"
-                     "\n\ncontrol MyComputeChecksum(inout headers_t hdr, inout meta_t meta) {"
-                     "\n    apply { }"
-                     "\n}\n"
-                    )
-        f.write(p4_header)
-        
+    with open(output_file, "w") as f:        
         # generate controls for each layer
         next_hop_ct = 0  # number each next hop
         for lvl in range(len(levels)):
@@ -244,34 +217,44 @@ def write_levels_to_p4(levels, stride_length, output_file):
             apply += "\n    }"
             f.write(apply)
             f.write("\n}\n")
+
+            # write the results control block
+            res_block = (f"\ncontrol set_res_{lvl}(inout bit<32> next_hop_idx, "
+                         f"inout headers_t hdr, inout std_meta_t std_meta){{"
+                         f"\n\n    action set_output_face(macAddr_t dstMac, bit<9> dstPort) {{"
+                         f"\n      hdr.ethernet.dstAddr = dstMac;"
+                         f"\n      std_meta.egress_spec = dstPort;"
+                         f"\n    }}"
+                         "\n\n    table result {"
+                         "\n      key = { next_hop_idx: exact; }"
+                         "\n      actions = {"
+                         "\n        set_output_face;"
+                         "\n      }"
+                         "\n      const entries = {"
+                    )
+            res_ct = 0
+            for lvl in range(len(levels)):
+                for node in levels[lvl]:
+                    for res in node.outFaceList:
+                        res_block += f"\n        {res_ct}: set_output_face(0x{res[0]:02x}, {res[1]});"
+                        res_ct += 1
+            res_block += "\n      }\n    }"
+            res_block += "\n  apply { result.apply(); }\n}\n"
+            f.write(res_block)
         
         # write ingress stage
         ingress = "\ncontrol MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {"
         for i in range(len(levels)):
             ingress += f"\n    layer_{i}() layer{i}_inst;"
-        ingress += ("\n\n    bit<32> next_hop_idx;"
-                    "\n\n    action set_output_face(bit<32> res) {"
-                    "\n      hdr.standard.outputFace = res;"
-                    "\n    }"
-                    "\n\n    table result {"
-                    "\n      key = { next_hop_idx: exact; }"
-                    "\n      actions = {"
-                    "\n        set_output_face;"
-                    "\n      }"
-                    "\n      const entries = {"
-                   )
-        res_ct = 0
-        for lvl in range(len(levels)):
-            for node in levels[lvl]:
-                for res in node.outFaceList:
-                    ingress += f"\n        {res_ct}: set_output_face({res});"
-                    res_ct += 1
-        ingress += ("\n      }"
-                    "\n    }"
+            ingress += f"\n    set_res_{i}() set_res_{i}_inst;"
+
+        ingress += (
                     "\n\n    apply {"
-                    "\n        bit<32> ip_addr = hdr.standard.src;"
+                    "\n        bit<32> next_hop_idx = 0;"
+                    "\n        bit<32> ip_addr = hdr.ipv4.dstAddr;"
                     "\n        bit<32> node_idx = 0;"
                     "\n        bool done = false;"
+                    "\n        bit<5> stride = 0;"
                    )
         msb = 31
         for lvl in range(len(levels)):
@@ -279,10 +262,10 @@ def write_levels_to_p4(levels, stride_length, output_file):
             if msb < stride_length - 1:
                 ip_str = f"(ip_addr << {stride_length - 1 - msb})"
                 msb = stride_length - 1
-            ingress += (f"\n\n        bit<{stride_length}> stride = {ip_str}[{msb}:{msb-stride_length+1}];"
+            ingress += (f"\n\n        stride = {ip_str}[{msb}:{msb-stride_length+1}];"
                         f"\n        layer{lvl}_inst.apply(next_hop_idx, stride, node_idx, done);"
                         "\n        if(done){ "
-                        "\n          result.apply();"
+                        f"\n          set_res_{lvl}_inst.apply(next_hop_idx, hdr, std_meta);"
                         "\n          return;"
                         "\n        }"
                        )
@@ -290,16 +273,3 @@ def write_levels_to_p4(levels, stride_length, output_file):
         
         ingress += "\n    }\n}\n"
         f.write(ingress)
-        
-        # remaining code
-        p4_footer = ("\n\ncontrol MyEgress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {"
-                     "\n    apply { }"
-                     "\n}"
-                     "\n\ncontrol MyDeparser(packet_out pkt, in headers_t hdr) {"
-                     "\n    apply {"
-                     "\n        pkt.emit(hdr.standard);"
-                     "\n    }"
-                     "\n}"
-                     "\n\nV1Switch(MyParser(), MyVerifyChecksum(), MyIngress(), MyEgress(), MyComputeChecksum(), MyDeparser()) main;"
-                    )
-        f.write(p4_footer)
