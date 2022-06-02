@@ -39,11 +39,11 @@ def get_internal_level(prefix, stride_length):
     """
     return len(prefix) // stride_length
 
-def get_num_levels(stride_length):
+def get_num_levels(stride_length, longest_prefix_length):
     """
     Return total number of levels needed to match 32 bits, given a stride length
     """
-    return 1 + (32 // stride_length)
+    return 1 + (longest_prefix_length // stride_length)
 
 class Node:                    
     def __init__(self, stride_length):
@@ -90,7 +90,8 @@ def build_trie_nodes(next_hop_map, stride_length):
     Returns a list of lists of Nodes (representing the nodes on each level).
     """
     
-    L = get_num_levels(stride_length)
+    longest_prefix_length = max([len(k) for k in next_hop_map.keys()])
+    L = get_num_levels(stride_length, longest_prefix_length)
     S = stride_length
     
     levels = []
@@ -254,7 +255,7 @@ def write_levels_to_p4(levels, stride_length, output_file):
                     "\n        bit<32> ip_addr = hdr.ipv4.dstAddr;"
                     "\n        bit<32> node_idx = 0;"
                     "\n        bool done = false;"
-                    "\n        bit<5> stride = 0;"
+                    f"\n        bit<{stride_length}> stride = 0;"
                    )
         msb = 31
         for lvl in range(len(levels)):
