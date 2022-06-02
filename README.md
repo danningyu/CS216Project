@@ -1,7 +1,7 @@
 # CS 216 Project
 
 ## How to use (6/1/2022)
-- **All relevant code is in `table-tbm/` folder.
+- **All relevant code is in `table-tbm/` folder.**
 - Define prefixes for hosts and their corresponding port and MAC address in `main.py`. The ports start from 1.
 - In `topology.json`, the IP and MAC needs to match. For the commands, the gateway IP address must be in the host IP's address range, and the MAC address can be anything. Make sure everything matches!
 - Run `python3 main.py` to generate the p4gen file.
