@@ -1,8 +1,10 @@
 # CS 216 Project
 
 ## How to use (6/1/2022)
-- Define prefixes for hosts and their corresponding port and MAC address in `trie.py`. The ports start from 1.
+- **All relevant code is in `table-tbm/` folder.
+- Define prefixes for hosts and their corresponding port and MAC address in `main.py`. The ports start from 1.
 - In `topology.json`, the IP and MAC needs to match. For the commands, the gateway IP address must be in the host IP's address range, and the MAC address can be anything. Make sure everything matches!
+- Run `python3 main.py` to generate the p4gen file.
 - Run `make run` to start everything up.
 - You can also start up Wireshark to inspect packets to confirm everything is appearing as expected.
 
@@ -12,6 +14,7 @@
 - Send packet: `<host> python send.py <dest_host> <msg>`
 
 ## Files
+- `sample-8bit.p4`: A file that implements a tree bitmap with a simple example.
 - `test.p4`: A file that implements a unibit trie with 3 prefixes: `0*`, `1*`, and `111*`.
 - `trie.py`: A file that generates P4 code for a unibit tree. The prefixes contained in the script were taken from the file.
 - `code_gen.p4`: A file that uses the output of `trie.p4` to generate a P4 file. It's like `test.p4`, but the trie isn't hardcoded into the file.
