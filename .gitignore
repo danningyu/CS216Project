@@ -8,3 +8,4 @@ p4-guide/
 */build/*
 */logs/*
 */pcaps/*
+venv/*
