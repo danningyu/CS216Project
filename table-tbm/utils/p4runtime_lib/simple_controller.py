@@ -126,7 +126,7 @@ def program_switch(addr, device_id, sw_conf_file, workdir, proto_dump_fpath, run
             table_entries = sw_conf['table_entries']
             info("Inserting %d table entries..." % len(table_entries))
             for entry in table_entries:
-                info(tableEntryToString(entry))
+                # info(tableEntryToString(entry))
                 validateTableEntry(entry, p4info_helper, runtime_json)
                 insertTableEntry(sw, entry, p4info_helper)
 

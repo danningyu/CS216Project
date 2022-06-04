@@ -32,8 +32,6 @@ endif
 all: run
 
 run: build
-	which python3
-	pwd
 	sudo python3 $(RUN_SCRIPT) -t $(TOPO) $(run_args)
 
 stop:

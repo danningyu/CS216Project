@@ -1,22 +1,35 @@
 {
     "hosts": {
-        "h1": {"ip": "10.0.1.1/28", "mac": "08:00:00:00:01:10",
+        "h1": {"ip": "10.0.1.1/28", "mac": "08:00:00:00:00:01",
                "commands":["route add default gw 10.0.1.10 dev eth0",
-                           "arp -i eth0 -s 10.0.1.10 08:00:00:00:01:00"]},
-        "h2": {"ip": "10.0.1.17/28", "mac": "08:00:00:00:01:20",
+                           "arp -i eth0 -s 10.0.1.10 ff:ff:ff:ff:ff:ff"]},
+        "h2": {"ip": "10.0.1.17/28", "mac": "08:00:00:00:00:02",
                "commands":["route add default gw 10.0.1.20 dev eth0",
-                           "arp -i eth0 -s 10.0.1.20 08:00:00:00:02:00"]},
-        "h3": {"ip": "10.0.0.1/28", "mac": "08:00:00:00:02:10",
+                           "arp -i eth0 -s 10.0.1.20 ff:ff:ff:ff:ff:ff"]},
+        "h3": {"ip": "10.0.0.1/28", "mac": "08:00:00:00:00:03",
                "commands":["route add default gw 10.0.0.10 dev eth0",
-                           "arp -i eth0 -s 10.0.0.10 08:00:00:00:03:00"]},
-        "h4": {"ip": "10.0.2.17/28", "mac": "08:00:00:00:02:20",
+                           "arp -i eth0 -s 10.0.0.10 ff:ff:ff:ff:ff:ff"]},
+        "h4": {"ip": "10.0.2.17/28", "mac": "08:00:00:00:00:04",
                "commands":["route add default gw 10.0.2.20 dev eth0",
-                           "arp -i eth0 -s 10.0.2.20 08:00:00:00:04:00"]}
+                           "arp -i eth0 -s 10.0.2.20 ff:ff:ff:ff:ff:ff"]},
+        "h5": {"ip": "202.12.28.1/28", "mac": "08:00:00:00:00:05",
+                "commands":["route add default gw 202.12.28.10 dev eth0",
+                            "arp -i eth0 -s 202.12.28.10 ff:ff:ff:ff:ff:ff"]},
+        "h6": {"ip": "203.133.248.254/28", "mac": "08:00:00:00:00:06",
+            "commands":["route add default gw 203.133.248.253 dev eth0",
+                        "arp -i eth0 -s 203.133.248.253 ff:ff:ff:ff:ff:ff"]},
+        "h7": {"ip": "202.158.221.222/28", "mac": "08:00:00:00:00:07",
+            "commands":["route add default gw 202.158.221.223 dev eth0",
+                        "arp -i eth0 -s 202.158.221.223 ff:ff:ff:ff:ff:ff"]},
+        "h8": {"ip": "203.133.248.10/28", "mac": "08:00:00:00:00:08",
+            "commands":["route add default gw 203.133.248.11 dev eth0",
+                        "arp -i eth0 -s 203.133.248.11 ff:ff:ff:ff:ff:ff"]}
     },
     "switches": {
         "s1": { "runtime_json" : "simple-topo/s1-runtime.json" }
     },
     "links": [
-        ["h1", "s1-p1"], ["h2", "s1-p2"], ["h3", "s1-p3"], ["h4", "s1-p4"]
+        ["h1", "s1-p1"], ["h2", "s1-p2"], ["h3", "s1-p3"], ["h4", "s1-p4"], ["h5", "s1-p5"],
+        ["h6", "s1-p6"], ["h7", "s1-p7"], ["h8", "s1-p8"]
     ]
 }

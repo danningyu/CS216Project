@@ -1,6 +1,0 @@
-{
-  "target": "bmv2",
-  "p4info": "build/tbm.p4.p4info.txt",
-  "bmv2_json": "build/tbm.json",
-  "table_entries": []
-}
