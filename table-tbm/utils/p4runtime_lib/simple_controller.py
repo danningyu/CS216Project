@@ -125,10 +125,12 @@ def program_switch(addr, device_id, sw_conf_file, workdir, proto_dump_fpath, run
         if 'table_entries' in sw_conf:
             table_entries = sw_conf['table_entries']
             info("Inserting %d table entries..." % len(table_entries))
-            for entry in table_entries:
-                info(tableEntryToString(entry))
+            for i, entry in enumerate(table_entries):
+                # info(tableEntryToString(entry))
                 validateTableEntry(entry, p4info_helper, runtime_json)
                 insertTableEntry(sw, entry, p4info_helper)
+                if i % 1000 == 0:
+                    print(f"Inserted {i} entries")
 
         if 'multicast_group_entries' in sw_conf:
             group_entries = sw_conf['multicast_group_entries']

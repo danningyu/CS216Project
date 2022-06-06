@@ -185,11 +185,36 @@ control layer_2(inout bit<8> next_hop_idx, inout bit<3> stride, inout bit<8> nod
     }
 }
 
+control set_res(inout bit<8> next_hop_idx, inout headers_t hdr, inout std_meta_t std_meta){
+    table result {
+      key = { next_hop_idx: exact; }
+      actions = {
+      }
+    }
+
+  apply { 
+    if(next_hop_idx == 0){
+      hdr.standard.outputFace = 0;
+    } else if(next_hop_idx == 1){
+      hdr.standard.outputFace = 1;
+    } else if(next_hop_idx == 2){
+      hdr.standard.outputFace = 2;
+    } else if(next_hop_idx == 3){
+      hdr.standard.outputFace = 3;
+    } else if(next_hop_idx == 4){
+      hdr.standard.outputFace = 4;
+    } else if(next_hop_idx == 5){
+      hdr.standard.outputFace = 5;
+    }
+  }
+}
+
 
 control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {
     layer_0() layer0_inst;
     layer_1() layer1_inst;
     layer_2() layer2_inst;
+    set_res() set_res_inst;
 
     bit<8> next_hop_idx;
 
@@ -220,20 +245,20 @@ control MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_m
         bit<3> stride = ip_addr[7:5];
         layer0_inst.apply(next_hop_idx, stride, node_idx, done);
         if(done){ 
-          result.apply();
+          set_res_inst.apply(next_hop_idx, hdr, std_meta);
           return; 
         }
 
         stride = ip_addr[4:2];
         layer1_inst.apply(next_hop_idx, stride, node_idx, done);
         if(done){ 
-          result.apply();
+          set_res_inst.apply(next_hop_idx, hdr, std_meta);
           return; 
         }
 
         stride = (ip_addr << 1)[2:0];
         layer2_inst.apply(next_hop_idx, stride, node_idx, done);
-        result.apply();
+        set_res_inst.apply(next_hop_idx, hdr, std_meta);
     }
 }
 

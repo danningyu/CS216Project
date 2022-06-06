@@ -1,11 +1,13 @@
-def generate(next_hop_map, stride_length=3, default_next_hop=(0x0, 0), output_file="tbm.p4gen"):
+import json
+
+def generate(next_hop_map, stride_length=3, default_next_hop=(0x0, 0), output_file="tbm.p4gen", runtime_file="simple-topo/s1-runtime.json"):
     """
     Takes in params next_hop_map (maps 32-bit IP addresses to 32-bit next hops),
     as well as length of each stride. The default_next_hop param sets the default next
     hop if no match (this is overriden if * is in the next_hop_map keys).
 
     Generates tree bit map internal/external bitmaps, converts to p4 code representation,
-    then saves p4 layer code in output file.
+    then saves p4 layer code in output file and runtime file.
     """
     
     validate_input(next_hop_map)
@@ -16,7 +18,7 @@ def generate(next_hop_map, stride_length=3, default_next_hop=(0x0, 0), output_fi
     
     levels = build_trie_nodes(next_hop_map, stride_length)
     
-    write_levels_to_p4(levels, stride_length, output_file)
+    write_levels_to_p4(levels, stride_length, output_file, runtime_file)
 
 def validate_input(next_hop_map):
     """ Sanity check that next_hop_map keys/values are valid """
@@ -24,6 +26,8 @@ def validate_input(next_hop_map):
         # keys should be bitstring prefixes of length 0-32
         assert(0 <= len(key) and len(key) <= 32)
         for c in key:
+            if c != "0" and c != "1":
+                print(key)
             assert(c == "0" or c == "1")
         # next hops should fit in 32-bit unsigned integer
         # changed to tuple of (output MAC, output router port)
@@ -124,15 +128,32 @@ def build_trie_nodes(next_hop_map, stride_length):
             res[i].append(levels[i][key])
     return res
 
-def write_levels_to_p4(levels, stride_length, output_file):
+def mac_hex_to_colon_separated(mac_addr):
+    """
+    Covert MAC address in the form 0x010203040506 to 01:02:03:04:05:06
+    """
+    assert(type(mac_addr) == str and len(mac_addr) == 14)
+    return (f"{mac_addr[2:4]}:{mac_addr[4:6]}:{mac_addr[6:8]}"
+            f":{mac_addr[8:10]}:{mac_addr[10:12]}:{mac_addr[12:14]}")
+
+def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
     """
     Given list of list of nodes corresponding to each level of the tree bit map,
     convert to a list of p4 controls with tables to encode each internal/external
     bitmap. Also creates an ingress stage that combines these controls and matches
     to a results table.
     
-    Converted p4 code written to output_file.
+    Converted p4 code written to `output_file`.
+    Converted table entries written to `runtime_file`.
     """
+
+    runtime_file_table_entries = []
+    runtime_file_json = {
+        "target": "bmv2",
+        "p4info": "build/tbm.p4.p4info.txt",
+        "bmv2_json": "build/tbm.json",
+        "table_entries": runtime_file_table_entries
+    }
 
     with open(output_file, "w") as f:        
         # generate controls for each layer
@@ -175,31 +196,60 @@ def write_levels_to_p4(levels, stride_length, output_file):
                 internal_table = (f"\n    table internal_{lvl}_{i} {{"
                                   "\n      key = { stride: exact; }"
                                   "\n      actions = { set_next_hop_idx; nop; }"
-                                  "\n      const entries = {"
+                                  "\n      size = 16384;"
+                                  "\n    }"
                                  )
+                
+                # specify default table entry
+                runtime_file_table_entries.append({   
+                    "table": f"MyIngress.layer_{lvl}_inst.internal_{lvl}_{i}",
+                    "default_action": True,
+                    "action_name": f"MyIngress.layer_{lvl}_inst.nop",
+                    "action_params": {}
+                })
+                
+                # save each table entry in s1-runtime.json
                 for j in range(len(internal_action)):
                     if internal_action[j] != -1:
-                        internal_table += f"\n        {j}: set_next_hop_idx({internal_action[j]});"
-                internal_table += ("\n      }"
-                                   "\n      default_action = nop();"
-                                   "\n    }"
-                                  )
+                        runtime_file_table_entries.append({
+                            "table": f"MyIngress.layer_{lvl}_inst.internal_{lvl}_{i}",
+                            "match": {
+                                "stride": [j]
+                            },
+                            "action_name": f"MyIngress.layer_{lvl}_inst.set_next_hop_idx",
+                            "action_params": { "idx": internal_action[j]}
+                        })
+
                 f.write(internal_table)
                 
                 # write each external table
                 external_table = (f"\n    table external_{lvl}_{i} {{"
                                   "\n      key = { stride: exact; }"
                                   "\n      actions = { set_node_idx; fail; }"
-                                  "\n      const entries = {"
+                                  "\n      size = 16384;"
+                                  "\n     }"
                                  )
+                
+                # specify default external table entry in runtime JSON
+                runtime_file_table_entries.append({
+                    "table": f"MyIngress.layer_{lvl}_inst.external_{lvl}_{i}",
+                    "default_action": True,
+                    "action_name": f"MyIngress.layer_{lvl}_inst.fail",
+                    "action_params": {}
+                })
+
+                # save each table entry in s1-runtime.json
                 for j in range(len(node.externalBitmap)):
                     if node.externalBitmap[j] == 1:
-                        external_table += f"\n        {j}: set_node_idx({node_idx_ct});"
+                        runtime_file_table_entries.append({
+                            "table": f"MyIngress.layer_{lvl}_inst.external_{lvl}_{i}",
+                            "match": {"stride": [j]},
+                            "action_name": f"MyIngress.layer_{lvl}_inst.set_node_idx",
+                            "action_params": {"idx": node_idx_ct}
+                        })
+
                         node_idx_ct += 1
-                external_table += ("\n      }"
-                                   "\n      default_action = fail();"
-                                   "\n    }\n"
-                                  )
+                
                 f.write(external_table)
                 
             # write the apply block
@@ -220,33 +270,54 @@ def write_levels_to_p4(levels, stride_length, output_file):
             f.write("\n}\n")
 
             # write the results control block
+            # converts node index to output MAC address and switch port
             res_block = (f"\ncontrol set_res_{lvl}(inout bit<32> next_hop_idx, "
                          f"inout headers_t hdr, inout std_meta_t std_meta){{"
-                         f"\n\n    action set_output_face(macAddr_t dstMac, bit<9> dstPort) {{"
-                         f"\n      hdr.ethernet.dstAddr = dstMac;"
-                         f"\n      std_meta.egress_spec = dstPort;"
-                         f"\n    }}"
-                         "\n\n    table result {"
-                         "\n      key = { next_hop_idx: exact; }"
-                         "\n      actions = {"
-                         "\n        set_output_face;"
-                         "\n      }"
-                         "\n      const entries = {"
+                         f"\n  action set_output_face(macAddr_t dstAddr, egressSpec_t dstPort) {{"
+                         f"\n    hdr.ethernet.dstAddr = dstAddr;"
+                         f"\n    std_meta.egress_spec = dstPort;"
+                         f"\n  }}"
+                         "\n\n  table result {"
+                         "\n    key = { next_hop_idx: exact; }"
+                         "\n    actions = { set_output_face; }"
+                         "\n  }"
                     )
-            res_ct = 0
-            for lvl in range(len(levels)):
-                for node in levels[lvl]:
-                    for res in node.outFaceList:
-                        res_block += f"\n        {res_ct}: set_output_face(0x{res[0]:02x}, {res[1]});"
-                        res_ct += 1
-            res_block += "\n      }\n    }"
+            
             res_block += "\n  apply { result.apply(); }\n}\n"
             f.write(res_block)
+
+            # table entries get written to s1-runtime.json
+            runtime_file_table_entries.append({
+                "table": f"MyIngress.set_res_{lvl}_inst.result",
+                "default_action": True,
+                "action_name": f"MyIngress.set_res_{lvl}_inst.set_output_face",
+                "action_params": { 
+                    "dstAddr": "00:00:00:00:00:00",
+                    "dstPort": 0
+                }
+            })
+            res_ct = 0
+            for lvl_loc in range(len(levels)):
+                for node in levels[lvl_loc]:
+                    for res in node.outFaceList:
+                        runtime_file_table_entries.append({
+                            "table": f"MyIngress.set_res_{lvl}_inst.result",
+                            "match": { "next_hop_idx": [res_ct] },
+                            "action_name": f"MyIngress.set_res_{lvl}_inst.set_output_face",
+                            "action_params": {
+                                "dstAddr": mac_hex_to_colon_separated(f"0x{res[0]:012x}"),
+                                "dstPort": res[1]
+                            }
+                        })
+                        res_ct += 1
+        
+        with open(runtime_file, "w") as runtime_file_fp:
+            json.dump(runtime_file_json, runtime_file_fp, indent=2)
         
         # write ingress stage
         ingress = "\ncontrol MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {"
         for i in range(len(levels)):
-            ingress += f"\n    layer_{i}() layer{i}_inst;"
+            ingress += f"\n    layer_{i}() layer_{i}_inst;"
             ingress += f"\n    set_res_{i}() set_res_{i}_inst;"
 
         ingress += (
@@ -264,7 +335,7 @@ def write_levels_to_p4(levels, stride_length, output_file):
                 ip_str = f"(ip_addr << {stride_length - 1 - msb})"
                 msb = stride_length - 1
             ingress += (f"\n\n        stride = {ip_str}[{msb}:{msb-stride_length+1}];"
-                        f"\n        layer{lvl}_inst.apply(next_hop_idx, stride, node_idx, done);"
+                        f"\n        layer_{lvl}_inst.apply(next_hop_idx, stride, node_idx, done);"
                         "\n        if(done){ "
                         f"\n          set_res_{lvl}_inst.apply(next_hop_idx, hdr, std_meta);"
                         "\n          return;"
