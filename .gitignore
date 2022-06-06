@@ -9,3 +9,5 @@ p4-guide/
 */logs/*
 */pcaps/*
 venv/*
+
+s1-runtime.json

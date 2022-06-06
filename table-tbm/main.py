@@ -1,5 +1,5 @@
 from tbm_generator import generate
-from parse_bgp_table import get_prefixes
+from network_util import get_prefixes
 
 from random import randint
 import sys

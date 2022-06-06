@@ -1,3 +1,6 @@
+# Given bgptable.txt downloaded from BruinLearn,
+# convert it to a CSV with columns destination,mask,next_hop
+
 mappings = {}
 
 with open("bgptable.txt", "r") as f:
@@ -21,10 +24,7 @@ with open("bgptable.txt", "r") as f:
 
             next_hop = components[2]
             mappings[(prefix, mask)] = next_hop
-            
         
-            
 with open("bgptable.csv", "w") as f:
     for k, v in mappings.items():
         f.write(f"{k[0]},{k[1]},{v}\n")
-

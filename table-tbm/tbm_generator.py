@@ -199,12 +199,16 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
                                   "\n      size = 16384;"
                                   "\n    }"
                                  )
+                
+                # specify default table entry
                 runtime_file_table_entries.append({   
                     "table": f"MyIngress.layer_{lvl}_inst.internal_{lvl}_{i}",
                     "default_action": True,
                     "action_name": f"MyIngress.layer_{lvl}_inst.nop",
                     "action_params": {}
                 })
+                
+                # save each table entry in s1-runtime.json
                 for j in range(len(internal_action)):
                     if internal_action[j] != -1:
                         runtime_file_table_entries.append({
@@ -215,18 +219,18 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
                             "action_name": f"MyIngress.layer_{lvl}_inst.set_next_hop_idx",
                             "action_params": { "idx": internal_action[j]}
                         })
-                        # internal_table += f"\n        {j}: set_next_hop_idx({internal_action[j]});"
 
                 f.write(internal_table)
                 
                 # write each external table
-
                 external_table = (f"\n    table external_{lvl}_{i} {{"
                                   "\n      key = { stride: exact; }"
                                   "\n      actions = { set_node_idx; fail; }"
                                   "\n      size = 16384;"
                                   "\n     }"
                                  )
+                
+                # specify default external table entry in runtime JSON
                 runtime_file_table_entries.append({
                     "table": f"MyIngress.layer_{lvl}_inst.external_{lvl}_{i}",
                     "default_action": True,
@@ -234,6 +238,7 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
                     "action_params": {}
                 })
 
+                # save each table entry in s1-runtime.json
                 for j in range(len(node.externalBitmap)):
                     if node.externalBitmap[j] == 1:
                         runtime_file_table_entries.append({
@@ -243,7 +248,6 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
                             "action_params": {"idx": node_idx_ct}
                         })
 
-                        # external_table += f"\n        {j}: set_node_idx({node_idx_ct});"
                         node_idx_ct += 1
                 
                 f.write(external_table)
@@ -266,6 +270,7 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
             f.write("\n}\n")
 
             # write the results control block
+            # converts node index to output MAC address and switch port
             res_block = (f"\ncontrol set_res_{lvl}(inout bit<32> next_hop_idx, "
                          f"inout headers_t hdr, inout std_meta_t std_meta){{"
                          f"\n  action set_output_face(macAddr_t dstAddr, egressSpec_t dstPort) {{"
@@ -281,6 +286,7 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
             res_block += "\n  apply { result.apply(); }\n}\n"
             f.write(res_block)
 
+            # table entries get written to s1-runtime.json
             runtime_file_table_entries.append({
                 "table": f"MyIngress.set_res_{lvl}_inst.result",
                 "default_action": True,
@@ -308,7 +314,6 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
         with open(runtime_file, "w") as runtime_file_fp:
             json.dump(runtime_file_json, runtime_file_fp, indent=2)
         
-
         # write ingress stage
         ingress = "\ncontrol MyIngress(inout headers_t hdr, inout meta_t meta, inout std_meta_t std_meta) {"
         for i in range(len(levels)):
