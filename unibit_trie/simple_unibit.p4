@@ -1,3 +1,6 @@
+// Unibit trie with 3 prefixes:
+// 0*, 1*, and 111*
+
 #include <core.p4>
 #include <v1model.p4>
 
