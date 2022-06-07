@@ -11,3 +11,4 @@ p4-guide/
 venv/*
 
 s1-runtime.json
+*.swp

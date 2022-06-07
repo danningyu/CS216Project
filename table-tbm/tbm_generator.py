@@ -280,6 +280,7 @@ def write_levels_to_p4(levels, stride_length, output_file, runtime_file):
                          "\n\n  table result {"
                          "\n    key = { next_hop_idx: exact; }"
                          "\n    actions = { set_output_face; }"
+                         "\n    size = 16384;"
                          "\n  }"
                     )
             
